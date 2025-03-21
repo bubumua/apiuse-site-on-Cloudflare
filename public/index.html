@@ -5,6 +5,22 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
   </head>
   <body>
+    <div class="container">
+      <h2>图片上传与识别</h2>
+      <div class="drop-zone" id="dropZone">
+        拖放图片到此处或点击上传
+        <input
+          type="file"
+          id="fileInput"
+          accept="image/png,image/jpeg"
+          style="display: none"
+        />
+      </div>
+      <img id="preview" class="preview" style="display: none" />
+      <button onclick="uploadImage()" id="uploadBtn" disabled>开始识别</button>
+      <div id="result"></div>
+    </div>
+
     <form method="POST" action="/api/submit">
       <div class="input">
         <label for="name">Full Name</label>
@@ -57,5 +73,178 @@
 
       <button type="submit">Submit</button>
     </form>
+
+    <script>
+      const config = {
+        hostUrl: "https://rest-api.xfyun.cn/v2/itr",
+        host: "rest-api.xfyun.cn",
+        appid: "c289d671",
+        apiSecret: "MWU0ODhhZWRhY2ZhZGYxNGUyNzEzNzUw",
+        apiKey: "216b9d113fe87ffe01b2811601d29cfe",
+        uri: "/v2/itr",
+      };
+
+      let currentFile = null;
+      const dropZone = document.getElementById("dropZone");
+      const fileInput = document.getElementById("fileInput");
+      const preview = document.getElementById("preview");
+      const uploadBtn = document.getElementById("uploadBtn");
+
+      // 处理拖放
+      dropZone.ondragover = (e) => {
+        e.preventDefault();
+        dropZone.style.borderColor = "#000";
+      };
+
+      dropZone.ondragleave = (e) => {
+        e.preventDefault();
+        dropZone.style.borderColor = "#ccc";
+      };
+
+      dropZone.ondrop = async (e) => {
+        e.preventDefault();
+        const files = e.dataTransfer.files;
+        if (files.length) await handleFile(files[0]);
+      };
+
+      // 处理点击上传
+      dropZone.onclick = () => fileInput.click();
+      fileInput.onchange = async () => {
+        if (fileInput.files.length) await handleFile(fileInput.files[0]);
+      };
+
+      async function handleFile(file) {
+        if (!file.type.match("image/(png|jpeg)")) {
+          alert("请上传PNG或JPG格式的图片！");
+          return;
+        }
+        currentFile = file;
+        preview.src = URL.createObjectURL(file);
+        preview.style.display = "block";
+        uploadBtn.disabled = false;
+      }
+
+      async function uploadImage() {
+        if (!currentFile) return;
+
+        try {
+          const base64Image = await readFileAsBase64(currentFile);
+          const postBody = createRequestBody(base64Image);
+
+          const { date, digest, authorization } = await generateAuthHeaders(
+            postBody
+          );
+
+          const response = await fetch(config.hostUrl, {
+            method: "POST",
+            headers: createRequestHeaders(date, digest, authorization),
+            body: JSON.stringify(postBody),
+          });
+
+          handleResponse(response);
+        } catch (error) {
+          handleError(error);
+        }
+      }
+
+      // 辅助函数
+      async function readFileAsBase64(file) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result.split(",")[1]);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+      }
+
+      function createRequestBody(base64Image) {
+        return {
+          common: { app_id: config.appid },
+          business: { ent: "teach-photo-print", aue: "raw" },
+          data: { image: base64Image },
+        };
+      }
+
+      async function generateAuthHeaders(body) {
+        const date = new Date().toUTCString();
+        console.log("Date Header:", date);
+        const digest = await calculateDigest(body);
+        const authorization = await generateAuthorization(date, digest);
+        return { date, digest, authorization };
+      }
+
+      async function calculateDigest(body) {
+        const encoder = new TextEncoder();
+        const data = encoder.encode(JSON.stringify(body));
+        const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+        return `SHA-256=${arrayBufferToBase64(hashBuffer)}`;
+      }
+
+      async function generateAuthorization(date, digest) {
+        // 修正点：严格按协议拼接 request-line
+        const requestLine = `POST ${config.uri} HTTP/1.1`;
+
+        const signatureOrigin = `host: ${config.host}\ndate: ${date}\n${requestLine}\ndigest: ${digest}`;
+
+        const encoder = new TextEncoder();
+        const keyBuffer = encoder.encode(config.apiSecret);
+        const cryptoKey = await crypto.subtle.importKey(
+          "raw",
+          keyBuffer,
+          { name: "HMAC", hash: "SHA-256" },
+          false,
+          ["sign"]
+        );
+
+        const signatureBuffer = await crypto.subtle.sign(
+          "HMAC",
+          cryptoKey,
+          encoder.encode(signatureOrigin)
+        );
+
+        const signature = arrayBufferToBase64(signatureBuffer);
+
+        // 调试输出（发布时可移除）
+        console.log("Signature Origin:\n", signatureOrigin);
+        console.log("Signature Length:", signature.length); // 应为44
+
+        return `api_key="${config.apiKey}", algorithm="hmac-sha256", headers="host date request-line digest", signature="${signature}"`;
+      }
+
+      function arrayBufferToBase64(buffer) {
+        return btoa(String.fromCharCode(...new Uint8Array(buffer)));
+      }
+
+      function createRequestHeaders(date, digest, authorization) {
+        return {
+          "Content-Type": "application/json",
+          Accept: "application/json,version=1.0",
+          Host: config.host,
+          Date: date,
+          Digest: digest,
+          Authorization: authorization,
+        };
+      }
+
+      async function handleResponse(response) {
+        try {
+          const result = await response.json();
+          document.getElementById("result").innerText = JSON.stringify(
+            result,
+            null,
+            2
+          );
+        } catch (error) {
+          throw new Error(`Invalid JSON response: ${await response.text()}`);
+        }
+      }
+
+      function handleError(error) {
+        console.error("Error:", error);
+        document.getElementById("result").innerText = `请求失败：${
+          error.message || "未知错误"
+        }`;
+      }
+    </script>
   </body>
 </html>
