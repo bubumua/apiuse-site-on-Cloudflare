@@ -9,11 +9,10 @@ const config = {
   hostUrl: "https://rest-api.xfyun.cn/v2/itr",
   host: "rest-api.xfyun.cn",
   //在控制台-我的应用-公式识别获取
-  appid: "********",
-  //在控制台-我的应用-公式识别获取
-  apiSecret: "********************************",
-  //在控制台-我的应用-公式识别获取
-  apiKey: "********************************",
+  appid: "c289d671",
+  apiSecret: "MWU0ODhhZWRhY2ZhZGYxNGUyNzEzNzUw",
+  apiKey: "216b9d113fe87ffe01b2811601d29cfe",
+  uri: "/v2/itr",
   uri: "/v2/itr",
   file: "./01.png",
 };

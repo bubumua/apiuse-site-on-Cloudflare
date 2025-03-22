@@ -1,47 +1,108 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html>
   <head>
-    <meta charset="UTF-8" />
-    <title>上传图片并调用 API</title>
+    <title>Image Recognition</title>
+    <style>
+      .container {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+      #preview {
+        max-width: 100%;
+        margin: 20px 0;
+      }
+      #result {
+        white-space: pre-wrap;
+      }
+    </style>
   </head>
   <body>
-    <h1>上传图片并调用 API</h1>
-    <input type="file" id="imageInput" accept="image/png, image/jpeg" />
-    <br />
-    <button id="uploadButton">上传并识别</button>
-    <pre id="result"></pre>
+    <div class="container">
+      <h1>Image Recognition</h1>
+
+      <input type="file" id="imageInput" accept="image/png,image/jpeg" />
+      <div
+        id="dropZone"
+        style="border: 2px dashed #ccc; padding: 20px; margin: 20px 0"
+      >
+        Drop image here or paste from clipboard
+      </div>
+
+      <img id="preview" style="display: none" />
+      <div id="result"></div>
+    </div>
+
     <script>
-      document
-        .getElementById("uploadButton")
-        .addEventListener("click", function () {
-          const fileInput = document.getElementById("imageInput");
-          if (fileInput.files.length === 0) {
-            alert("请选择图片文件");
-            return;
+      const dropZone = document.getElementById("dropZone");
+      const imageInput = document.getElementById("imageInput");
+      const preview = document.getElementById("preview");
+      const result = document.getElementById("result");
+
+      // Handle file input change
+      imageInput.addEventListener("change", handleFile);
+
+      // Handle drag and drop
+      dropZone.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        dropZone.style.borderColor = "#000";
+      });
+
+      dropZone.addEventListener("dragleave", (e) => {
+        dropZone.style.borderColor = "#ccc";
+      });
+
+      dropZone.addEventListener("drop", (e) => {
+        e.preventDefault();
+        dropZone.style.borderColor = "#ccc";
+        const file = e.dataTransfer.files[0];
+        if (file && (file.type === "image/png" || file.type === "image/jpeg")) {
+          uploadImage(file);
+        }
+      });
+
+      // Handle paste
+      document.addEventListener("paste", (e) => {
+        const items = e.clipboardData.items;
+        for (let item of items) {
+          if (item.type.indexOf("image") !== -1) {
+            const file = item.getAsFile();
+            uploadImage(file);
+            break;
           }
-          const file = fileInput.files[0];
-          const reader = new FileReader();
-          reader.onload = async function (e) {
-            // 去掉 data:image/... 前缀，仅保留 base64 数据
-            const base64Image = e.target.result.split(",")[1];
-            try {
-              const response = await fetch("/xfocr", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ image: base64Image }),
-              });
-              const data = await response.json();
-              document.getElementById("result").textContent = JSON.stringify(
-                data,
-                null,
-                2
-              );
-            } catch (err) {
-              document.getElementById("result").textContent = "Error: " + err;
-            }
-          };
-          reader.readAsDataURL(file);
-        });
+        }
+      });
+
+      function handleFile(e) {
+        const file = e.target.files[0];
+        if (file) {
+          uploadImage(file);
+        }
+      }
+
+      function uploadImage(file) {
+        // Show preview
+        preview.style.display = "block";
+        preview.src = URL.createObjectURL(file);
+
+        // Upload to server
+        const formData = new FormData();
+        formData.append("image", file);
+
+        result.textContent = "Processing...";
+
+        fetch("/upload", {
+          method: "POST",
+          body: formData,
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            result.textContent = JSON.stringify(data, null, 2);
+          })
+          .catch((error) => {
+            result.textContent = "Error: " + error.message;
+          });
+      }
     </script>
   </body>
 </html>
