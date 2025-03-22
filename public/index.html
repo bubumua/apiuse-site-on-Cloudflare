@@ -12,8 +12,72 @@
         max-width: 100%;
         margin: 20px 0;
       }
-      #result {
+      /* #result {
         white-space: pre-wrap;
+      } */
+      .result-container {
+        /* position: relative; */
+        margin: 20px 0;
+      }
+
+      #result {
+        width: 100%;
+        padding: 12px;
+        font-family: "Courier New", monospace;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        resize: vertical;
+      }
+
+      .toolbar {
+        /* position: absolute; */
+        /* top: 8px;
+        right: 12px; */
+        /* gap: 8px; */
+        display: flex;
+        justify-content: flex-start;
+      }
+
+      #copyButton {
+        padding: 4px 12px;
+        background: #f0f0f0;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+
+      #copyButton:hover {
+        background: #e0e0e0;
+      }
+
+      .status {
+        color: #666;
+        font-size: 0.9em;
+        opacity: 0;
+        transition: opacity 0.3s;
+      }
+
+      .status.visible {
+        opacity: 1;
+      }
+
+      /* 添加加载动画 */
+      #result.loading::after {
+        content: "";
+        display: inline-block;
+        width: 1em;
+        height: 1em;
+        border: 2px solid #ddd;
+        border-radius: 50%;
+        border-top-color: #333;
+        animation: spin 1s linear infinite;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
       }
     </style>
   </head>
@@ -30,7 +94,18 @@
       </div>
 
       <img id="preview" style="display: none" />
-      <div id="result"></div>
+      <div class="result-container">
+        <div class="toolbar">
+          <button id="copyButton">Copy</button>
+          <span id="copyStatus" class="status"></span>
+        </div>
+        <textarea
+          id="result"
+          rows="8"
+          spellcheck="false"
+          placeholder="The recognition results will be displayed here..."
+        ></textarea>
+      </div>
     </div>
 
     <script>
@@ -38,6 +113,9 @@
       const imageInput = document.getElementById("imageInput");
       const preview = document.getElementById("preview");
       const result = document.getElementById("result");
+      // 新增复制功能
+      const copyButton = document.getElementById("copyButton");
+      const copyStatus = document.getElementById("copyStatus");
 
       // Handle file input change
       imageInput.addEventListener("change", handleFile);
@@ -73,11 +151,29 @@
         }
       });
 
+      copyButton.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(result.value);
+          showStatus("已复制到剪贴板!");
+        } catch (err) {
+          showStatus("复制失败", true);
+        }
+      });
+
       function handleFile(e) {
         const file = e.target.files[0];
         if (file) {
           uploadImage(file);
         }
+      }
+
+      function showStatus(text, isError = false) {
+        copyStatus.textContent = text;
+        copyStatus.style.color = isError ? "#d00" : "#666";
+        copyStatus.classList.add("visible");
+        setTimeout(() => {
+          copyStatus.classList.remove("visible");
+        }, 2000);
       }
 
       function uploadImage(file) {
@@ -90,6 +186,7 @@
         formData.append("image", file);
 
         result.textContent = "Processing...";
+        result.classList.add("loading");
 
         fetch("/upload", {
           method: "POST",
@@ -97,11 +194,41 @@
         })
           .then((response) => response.json())
           .then((data) => {
-            result.textContent = JSON.stringify(data, null, 2);
+            result.classList.remove("loading");
+            const contents = data.data.region
+              .filter((area) => area.recog?.content) // 过滤有效内容
+              .map((area) => processXunfeiLatex(area.recog.content));
+            result.value = contents.join("\n"); // 改为赋值value属性
           })
           .catch((error) => {
-            result.textContent = "Error: " + error.message;
+            result.textContent = "Error when fetching: " + error.message;
           });
+      }
+
+      function processXunfeiLatex(xfLatex) {
+        console.log(xfLatex);
+        stdLatex = xfLatex
+          // Step 1: 删除特定标记（支持换行符前后的空白）
+          .replace(/ifly-latex-begin\s*|\s*ifly-latex-end/g, "")
+
+          // Step 2: 修复双反斜杠（支持多级转义场景）
+          .replace(/\\\\+/g, "\\")
+
+          // Step 3: 修复数学符号后空格（扩展支持多种数学符号）
+          .replace(/\\(overline|underline|mathbb|mathcal)\s*{/g, "\\$1{")
+
+          // Step 4: 智能空格处理（保留必要间距）
+          .replace(/\s*([=+\-*/])\s*/g, " $1 ") // 运算符间距
+          .replace(/\s{2,}/g, " ") // 合并连续空格
+          .replace(/(\\[a-zA-Z]+)\s+/g, "$1 ") // 命令后空格处理
+
+          // Step 5: 优化上下标结构
+          .replace(/([_^])\s*{/g, "$1{") // 紧接大括号的情况
+          .replace(/([_^])(\w)/g, "$1{$2}") // 自动补全简单上下标
+          .trim();
+        console.log(stdLatex);
+
+        return stdLatex;
       }
     </script>
   </body>

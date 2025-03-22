@@ -2,7 +2,8 @@ const express = require("express");
 const multer = require("multer");
 const path = require("path");
 const CryptoJS = require("crypto-js");
-const request = require("request");
+// const request = require("request");
+const axios = require("axios"); // 替换为axios
 const fs = require("fs");
 
 const app = express();
@@ -55,34 +56,31 @@ app.post("/upload", upload.single("image"), async (req, res) => {
   // Generate API request
   const date = new Date().toUTCString();
   const postBody = getPostBody(config);
-  const digest = getDigest(postBody);
+  const postBodyString = JSON.stringify(postBody); // 关键修改：预序列化JSON
+  const digest = getDigest(postBodyString); // 使用字符串生成摘要
 
-  const options = {
-    url: config.hostUrl,
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json,version=1.0",
-      Host: config.host,
-      Date: date,
-      Digest: digest,
-      Authorization: getAuthStr(date, digest, config),
-    },
-    json: true,
-    body: postBody,
-  };
+  try {
+    const response = await axios.post(config.hostUrl, postBodyString, {
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json,version=1.0",
+        Host: config.host,
+        Date: date,
+        Digest: digest,
+        Authorization: getAuthStr(date, digest, config),
+      },
+      validateStatus: () => true, // 接受所有响应状态码
+    });
 
-  // Make API request
-  request.post(options, (err, response, body) => {
-    if (err) {
-      return res.status(500).json({ error: "API call failed" });
-    }
-    res.json(body);
-
-    // Clean up uploaded file
+    res.json(response.data);
+  } catch (error) {
+    res.status(500).json({ error: "API call failed" });
+  } finally {
     fs.unlink(req.file.path, (err) => {
+      // 确保清理文件
       if (err) console.error("Error deleting file:", err);
     });
-  });
+  }
 });
 
 // Helper functions for API request
@@ -100,10 +98,10 @@ function getPostBody(config) {
   };
 }
 
-function getDigest(body) {
+function getDigest(bodyString) {
+  // 改为接收字符串
   return (
-    "SHA-256=" +
-    CryptoJS.enc.Base64.stringify(CryptoJS.SHA256(JSON.stringify(body)))
+    "SHA-256=" + CryptoJS.enc.Base64.stringify(CryptoJS.SHA256(bodyString))
   );
 }
 
